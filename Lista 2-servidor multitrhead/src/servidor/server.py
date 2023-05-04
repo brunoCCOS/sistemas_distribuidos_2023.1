@@ -54,20 +54,22 @@ class Server:
 		while True:
 			#recebe dados do cliente
 			data = clisock.recv(1024) 
-			pack = self.check_requisicao(data)
-			if pack[0] == 'POST':
+			pack = self.check_requisicao(str(data))
+			if type(pack) == str:
+				msg = pack
+			elif pack[0] == 'POST':
 				self.db_connect.insert_pair(pack[1][0],pack[1][1])
 				msg = 'Requisição recebida e cadastrada'
 			elif pack[0] == 'GET':
 				v = self.db_connect.read_key(pack[1])
 				msg = f'Resposta da requisição: {v}'
-			if not data: # dados vazios: cliente encerrou
+			elif not data: # dados vazios: cliente encerrou
 				print(str(endr) + '-> encerrou')
 				clisock.close() # encerra a conexao com o cliente
 				return
 			
 			print(str(endr) + ': ' + str(data, encoding='utf-8'))
-			clisock.send(msg) # ecoa os dados para o cliente
+			clisock.send(bytes(msg,'utf-8')) # ecoa os dados para o cliente
 
 
 	def check_requisicao(self,in_):
@@ -77,8 +79,8 @@ class Server:
 		try:
 			k, v = in_.split(":")
 			_, _ = str(k), str(v)
-		except Exception:
-			pass
+		except Exception as e:
+			raise(e)
 		else:
 			return ('POST',[k,v]) #Retorna o tipo de operação e o par chave valor
 		
@@ -89,7 +91,7 @@ class Server:
 		except:
 			return "EROR: Formato de entrada inválido. Use KEY:VALUE para uma inserção ou VALUE para uma consulta"
 		else:
-			return('GET',k) # Retorna o tipo GET e o valor de consulta
+			return ('GET',k) # Retorna o tipo GET e o valor de consulta
 
 	def shutdown(self):
 		'''
