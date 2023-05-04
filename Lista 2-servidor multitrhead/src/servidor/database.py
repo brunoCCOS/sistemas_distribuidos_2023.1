@@ -6,13 +6,14 @@ class database:
         self.open = False
         self.dic = None 
 
-    def coonect_db(self):
+    def connect_db(self):
         '''
         Lê e desserializa o dicionário da instancia física
         '''
         if not self.open:
             with open(self.file_path, 'r') as jsonFile:
                 self.dic = json.load(jsonFile)
+                self.open = True
                 return
         else:
             return
@@ -39,5 +40,5 @@ class database:
 
     def persist_db(self):
         with open(self.file_path, 'w') as jsonFile:
-            json.dump(self.dic,self.jsonFile)
+            json.dump(self.dic,jsonFile)
         return

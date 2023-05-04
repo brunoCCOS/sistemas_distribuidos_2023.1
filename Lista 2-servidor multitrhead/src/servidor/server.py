@@ -2,93 +2,101 @@
 #com finalizacao do lado do servidor
 #com multithreading (usa join para esperar as threads terminarem apos digitar 'fim' no servidor)
 import socket
-import select
-import sys
-import threading
-
+from database import database
 # define a localizacao do servidor
-HOST = '' # vazio indica que podera receber requisicoes a partir de qq interface de rede da maquina
-PORT = 10001 # porta de acesso
 
-#define a lista de I/O de interesse (jah inclui a entrada padrao)
-entradas = [sys.stdin]
-#armazena historico de conexoes 
-conexoes = {}
+class Server:
+		
+	def __init__(self,HOST,PORT,db):
+		'''Cria um socket de servidor e o coloca em modo de espera por conexoes
+		Saida: o socket criado'''
+		# cria o socket 
+		self.HOST = HOST
+		self.PORT = PORT
+		self.db_connect =  database(db)
 
-def iniciaServidor():
-	'''Cria um socket de servidor e o coloca em modo de espera por conexoes
-	Saida: o socket criado'''
-	# cria o socket 
-	sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM) #Internet( IPv4 + TCP) 
+	def start_server(self):
 
-	# vincula a localizacao do servidor
-	sock.bind((HOST, PORT))
+		self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM) #Internet( IPv4 + TCP) 
+		#Inicializa o banco de dados
+		self.db_connect.connect_db() 
+		# vincula a localizacao do servidor
+		self.sock.bind((self.HOST, self.PORT))
+		#armazena historico de conexoes 
+		self.conexoes = {}
+		# coloca-se em modo de espera por conexoes
+		self.sock.listen(5) 
 
-	# coloca-se em modo de espera por conexoes
-	sock.listen(5) 
+		# configura o socket para o modo nao-bloqueante
+		self.sock.setblocking(False)
 
-	# configura o socket para o modo nao-bloqueante
-	sock.setblocking(False)
+		# inclui o socket principal na lista de entradas de interesse
+		return self.sock
 
-	# inclui o socket principal na lista de entradas de interesse
-	entradas.append(sock)
+	def aceitaConexao(self):
+		'''Aceita o pedido de conexao de um cliente
+		Entrada: o socket do servidor
+		Saida: o novo socket da conexao e o endereco do cliente'''
 
-	return sock
+		# estabelece conexao com o proximo cliente
+		clisock, endr = self.sock.accept()
 
-def aceitaConexao(sock):
-	'''Aceita o pedido de conexao de um cliente
-	Entrada: o socket do servidor
-	Saida: o novo socket da conexao e o endereco do cliente'''
+		# registra a nova conexao
+		self.conexoes[clisock] = endr 
 
-	# estabelece conexao com o proximo cliente
-	clisock, endr = sock.accept()
+		return clisock, endr
 
-	# registra a nova conexao
-	conexoes[clisock] = endr 
+	def atendeRequisicoes(self,clisock, endr):
+		'''Recebe mensagens e as envia de volta para o cliente (ate o cliente finalizar)
+		Entrada: socket da conexao e endereco do cliente
+		Saida: '''
 
-	return clisock, endr
+		while True:
+			#recebe dados do cliente
+			data = clisock.recv(1024) 
+			pack = self.check_requisicao(data)
+			if pack[0] == 'POST':
+				self.db_connect.insert_pair(pack[1][0],pack[1][1])
+				msg = 'Requisição recebida e cadastrada'
+			elif pack[0] == 'GET':
+				v = self.db_connect.read_key(pack[1])
+				msg = f'Resposta da requisição: {v}'
+			if not data: # dados vazios: cliente encerrou
+				print(str(endr) + '-> encerrou')
+				clisock.close() # encerra a conexao com o cliente
+				return
+			
+			print(str(endr) + ': ' + str(data, encoding='utf-8'))
+			clisock.send(msg) # ecoa os dados para o cliente
 
-def atendeRequisicoes(clisock, endr):
-	'''Recebe mensagens e as envia de volta para o cliente (ate o cliente finalizar)
-	Entrada: socket da conexao e endereco do cliente
-	Saida: '''
 
-	while True:
-		#recebe dados do cliente
-		data = clisock.recv(1024) 
-		if not data: # dados vazios: cliente encerrou
-			print(str(endr) + '-> encerrou')
-			clisock.close() # encerra a conexao com o cliente
-			return 
-		print(str(endr) + ': ' + str(data, encoding='utf-8'))
-		clisock.send(data) # ecoa os dados para o cliente
+	def check_requisicao(self,in_):
+		'''
+		Função de validação de input, checa se a entrada está no formato correto e trata saída
+		'''
+		try:
+			k, v = in_.split(":")
+			_, _ = str(k), str(v)
+		except Exception:
+			pass
+		else:
+			return ('POST',[k,v]) #Retorna o tipo de operação e o par chave valor
+		
+		try:
+			k = in_.split(':')
+			if len(k)>0:
+				raise Exception()
+		except:
+			return "EROR: Formato de entrada inválido. Use KEY:VALUE para uma inserção ou VALUE para uma consulta"
+		else:
+			return('GET',k) # Retorna o tipo GET e o valor de consulta
 
-def main():
-	'''Inicializa e implementa o loop principal (infinito) do servidor'''
-	clientes=[] #armazena as threads criadas para fazer join
-	sock = iniciaServidor()
-	print("Pronto para receber conexoes...")
-	while True:
-		#espera por qualquer entrada de interesse
-		leitura, escrita, excecao = select.select(entradas, [], [])
-		#tratar todas as entradas prontas
-		for pronto in leitura:
-			if pronto == sock:  #pedido novo de conexao
-				clisock, endr = aceitaConexao(sock)
-				print ('Conectado com: ', endr)
-				#cria nova thread para atender o cliente
-				cliente = threading.Thread(target=atendeRequisicoes, args=(clisock,endr))
-				cliente.start()
-				clientes.append(cliente) #armazena a referencia da thread para usar com join()
-			elif pronto == sys.stdin: #entrada padrao
-				cmd = input()
-				if cmd == 'fim': #solicitacao de finalizacao do servidor
-					for c in clientes: #aguarda todas as threads terminarem
-						c.join()
-					sock.close()
-					sys.exit()
-				elif cmd == 'hist': #outro exemplo de comando para o servidor
-					print(str(conexoes.values()))
+	def shutdown(self):
+		'''
+		Desliga o servidor fechando o socket de conexão
+		'''
+		self.db_connect.persist_db() #Persiste o dicionário
+		self.sock.close()
 
-main()
-
+	def get_hist(self):
+		return self.conexoes
