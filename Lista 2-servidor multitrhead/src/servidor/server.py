@@ -3,6 +3,8 @@
 #com multithreading (usa join para esperar as threads terminarem apos digitar 'fim' no servidor)
 import socket
 from database import database
+import regex as re
+import sys
 # define a localizacao do servidor
 
 class Server:
@@ -46,7 +48,7 @@ class Server:
 
 		return clisock, endr
 
-	def atendeRequisicoes(self,clisock, endr):
+	def atendeRequisicoes(self,clisock, endr, lock):
 		'''Recebe mensagens e as envia de volta para o cliente (ate o cliente finalizar)
 		Entrada: socket da conexao e endereco do cliente
 		Saida: '''
@@ -54,11 +56,14 @@ class Server:
 		while True:
 			#recebe dados do cliente
 			data = clisock.recv(1024) 
-			pack = self.check_requisicao(str(data))
+			print(str(data))
+			pack = self.check_requisicao(str(data.decode('utf-8')))
 			if type(pack) == str:
 				msg = pack
 			elif pack[0] == 'POST':
+				lock.acquire() #Trava para evitar condições de corrida na escrita
 				self.db_connect.insert_pair(pack[1][0],pack[1][1])
+				lock.release()
 				msg = 'Requisição recebida e cadastrada'
 			elif pack[0] == 'GET':
 				v = self.db_connect.read_key(pack[1])
@@ -69,29 +74,32 @@ class Server:
 				return
 			
 			print(str(endr) + ': ' + str(data, encoding='utf-8'))
-			clisock.send(bytes(msg,'utf-8')) # ecoa os dados para o cliente
-
+			try:
+				clisock.send(bytes(msg,'utf-8')) # ecoa os dados para o cliente
+			except (BrokenPipeError, IOError):
+				print ('Conexão encerrada prematuramente', file = sys.stderr)
+				return
+			
 
 	def check_requisicao(self,in_):
 		'''
 		Função de validação de input, checa se a entrada está no formato correto e trata saída
 		'''
-		try:
-			k, v = in_.split(":")
-			_, _ = str(k), str(v)
-		except Exception as e:
-			raise(e)
+		match = re.match(r'^(\w+)(?::(.+))?$', in_)
+		# print(match.groups())
+		if match:
+				print(match.groups())
+				# Se tiver um segundo grupo não nulo, trata como POST
+				if match.groups()[1]!=None:
+					word, sentence = match.groups()
+					k, v = in_.split(':')
+					return ('POST',[k,v]) #Retorna o tipo de operação e o par chave valor
+				# Caso contrário, é uma requisição GET
+				else:
+					k = in_
+					return ('GET',k) # Retorna o tipo GET e o valor de consulta
 		else:
-			return ('POST',[k,v]) #Retorna o tipo de operação e o par chave valor
-		
-		try:
-			k = in_.split(':')
-			if len(k)>0:
-				raise Exception()
-		except:
 			return "EROR: Formato de entrada inválido. Use KEY:VALUE para uma inserção ou VALUE para uma consulta"
-		else:
-			return ('GET',k) # Retorna o tipo GET e o valor de consulta
 
 	def shutdown(self):
 		'''

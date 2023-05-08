@@ -2,7 +2,7 @@
 import socket
 
 HOST = 'localhost' # maquina onde esta o servidor
-PORT = 10001       # porta que o servidor esta escutando
+PORT = 10000       # porta que o servidor esta escutando
 
 def iniciaCliente():
 	'''Cria um socket de cliente e conecta-se ao servidor.
