@@ -59,13 +59,11 @@
    <li>listar_clientes_conectados: Printa lista de conexões realizadas
    <li>iniciar: Inicializa o servidor
  </ul>
-
  Classe secundária :
-  Atendentes: Cuida e processa das requisições na fila
+  <p> Atendentes: Cuida e processa das requisições na fila
 
  Cliente: Responsável pelo estabelecimento da conexão com o servidor e envio das requisições
  Métodos: Opera atráves do componente de interface
-
 
 
 
